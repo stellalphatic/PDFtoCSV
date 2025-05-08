@@ -47,7 +47,7 @@ The system employs a cascade of extraction methods, starting with the most advan
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/invoice-table-extractor.git
+   git clone https://github.com/stellalphatic/invoice-table-extractor.git
    cd invoice-table-extractor
    ```
 
