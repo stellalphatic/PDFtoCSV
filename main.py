@@ -4,7 +4,11 @@ import logging
 import tempfile
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 from werkzeug.utils import secure_filename
+
+# Import all extractors
 from invoice_extractor import InvoiceTableExtractor
+from invoice_table_extractor_advanced import AdvancedInvoiceExtractor
+from ai_invoice_extractor import AIInvoiceExtractor
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -27,14 +31,27 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
 
-# Initialize the invoice extractor
+# Initialize the invoice extractors
 # Set paths to external tools if needed
 tesseract_path = os.environ.get('TESSERACT_PATH', None)
 poppler_path = os.environ.get('POPPLER_PATH', None)
 
-invoice_extractor = InvoiceTableExtractor(
+# Original extractor as final fallback
+original_extractor = InvoiceTableExtractor(
     tesseract_path=tesseract_path,
     poppler_path=poppler_path,
+    debug=True
+)
+
+# Enhanced extractor as secondary option
+advanced_extractor = AdvancedInvoiceExtractor(
+    tesseract_path=tesseract_path,
+    debug=True
+)
+
+# AI-enhanced extractor as primary option
+ai_extractor = AIInvoiceExtractor(
+    tesseract_path=tesseract_path,
     debug=True
 )
 
@@ -66,7 +83,7 @@ def upload_file():
     
     if file and allowed_file(file.filename):
         # Secure the filename and save the uploaded file
-        filename = secure_filename(file.filename)
+        filename = secure_filename(file.filename if file.filename is not None else "uploaded_file.pdf")
         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         logger.debug(f"Saving file to: {pdf_path}")
         file.save(pdf_path)
@@ -77,9 +94,20 @@ def upload_file():
         logger.debug(f"Output will be saved to: {output_path}")
         
         try:
-            # Process the invoice
-            logger.info(f"Starting invoice extraction for: {filename}")
-            results = invoice_extractor.extract_from_pdf(pdf_path, output_path)
+            # First try with AI-enhanced extractor
+            logger.info(f"Starting AI-enhanced invoice extraction for: {filename}")
+            results = ai_extractor.extract_from_pdf(pdf_path, output_path)
+            
+            # If AI extractor fails, try advanced extractor as first fallback
+            if results is None or results.empty:
+                logger.info(f"AI extraction failed, trying advanced extractor")
+                results = advanced_extractor.extract_from_pdf(pdf_path, output_path)
+                
+                # If advanced extractor also fails, try original extractor as final fallback
+                if results is None or results.empty:
+                    logger.info(f"Advanced extraction failed, trying original extractor")
+                    results = original_extractor.extract_from_pdf(pdf_path, output_path)
+            
             logger.info(f"Extraction complete for: {filename}")
             
             if results is None or results.empty:
